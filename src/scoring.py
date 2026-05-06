@@ -7,16 +7,15 @@ Combines five signals into a single 0..1 score per package:
   ------------------  ------   --------------------------------------------
   OSV hit             0.50     hard ground-truth label
   Low downloads       0.15     near-zero downloads under a popular parent
-  Recent ownership    0.15     maintainer transfer < N days ago
+  Recent ownership    0.15     latest publish was within the last N days
   Typosquatting       0.10     Levenshtein <= 2 to a top-1k package name
   High in-degree      0.10     amplifier: many packages depend on this node
-
-OWNER: Yaxita Amin
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from .graph import DiGraph, Node
@@ -38,7 +37,7 @@ class Score:
     typosquat: float = 0.0
     in_degree: float = 0.0
     flagged: bool = False
-    reasons: List[str] = field(default_factory=list)   # human-readable bullets
+    reasons: List[str] = field(default_factory=list)
 
 
 class Scorer:
@@ -55,71 +54,103 @@ class Scorer:
         popular_names: Optional[List[str]] = None,
         threshold: float = DEFAULT_THRESHOLD,
     ) -> None:
-        # TODO (Yaxita):
-        #   - self.popular = [n.lower() for n in (popular_names or [])]
-        #   - self.threshold = threshold
-        raise NotImplementedError
+        self.popular: List[str] = [
+            n.lower() for n in (popular_names or []) if isinstance(n, str)
+        ]
+        self.threshold = threshold
 
     # --- individual signals (each returns a float in [0, 1]) ----------------
     def _osv_signal(self, vulns: List[Vulnerability]) -> float:
-        """1.0 if any CRITICAL or HIGH; 0.6 MODERATE; 0.3 LOW; 0.0 otherwise.
-        TODO (Yaxita): pick max severity across vulns and map.
+        """Map the worst severity across a node's vulns to a signal value.
+
+        CRITICAL/HIGH -> 1.0, MODERATE -> 0.6, LOW -> 0.3, otherwise 0.0.
+        Any OSV match at all is at least 0.4 (so a known vuln with no
+        recorded severity still contributes meaningfully).
         """
-        raise NotImplementedError
+        if not vulns:
+            return 0.0
+        levels = {
+            "CRITICAL": 1.0,
+            "HIGH":     1.0,
+            "MODERATE": 0.6,
+            "MEDIUM":   0.6,
+            "LOW":      0.3,
+        }
+        best = 0.0
+        for v in vulns:
+            sev = (v.severity or "").upper()
+            best = max(best, levels.get(sev, 0.4))
+        return best
 
     def _downloads_signal(
         self, node: Node, parent_downloads: Optional[int]
     ) -> float:
         """Anomaly when a node has near-zero downloads under a popular parent.
 
-        TODO (Yaxita):
-          - If node.weekly_downloads is None, return 0 (no signal).
-          - If node.weekly_downloads < 50 AND parent_downloads and
-            parent_downloads > 100_000  -> return 1.0 (very suspicious).
-          - Else, smooth ramp:
-                ratio = (node.weekly_downloads + 1) / (parent_downloads + 1)
-                return max(0.0, 1.0 - min(1.0, ratio * 1000))
-            (calibrate during evaluation; this is a starting point.)
+        Two regimes:
+          1. Hard rule: child < 50 weekly downloads AND parent > 100k -> 1.0
+          2. Smooth ramp: 1 - min(1, child / parent * 1000), so a child with
+             100x fewer downloads than its parent picks up ~0.9.
         """
-        raise NotImplementedError
+        if node.weekly_downloads is None:
+            return 0.0
+        child = node.weekly_downloads
+        parent = parent_downloads or 0
+
+        if child < 50 and parent > 100_000:
+            return 1.0
+        if parent <= 0:
+            return 0.0
+
+        ratio = (child + 1) / (parent + 1)
+        signal = 1.0 - min(1.0, ratio * 1000.0)
+        return max(0.0, signal)
 
     def _ownership_signal(self, node: Node) -> float:
-        """Recent maintainer transfer is suspicious.
+        """Recent publishes are a (rough) proxy for recent ownership change.
 
-        TODO (Yaxita):
-          - The crawler doesn't currently stash 'days_since_owner_change'.
-            Either:
-              (a) extend Node with that field and have Helen populate it
-                  from manifest['time'] history, OR
-              (b) for v0, return 0.0 here and add it as a stretch goal.
-          - When implemented:
-              < 30 days -> 1.0
-              < 90 days -> 0.6
-              < 180 days -> 0.3
-              else -> 0.0
+        The crawler stashes ``published_at`` (the ISO timestamp of the
+        version we picked); we measure age in days and bucket it.
         """
-        raise NotImplementedError
+        if not node.published_at:
+            return 0.0
+        try:
+            published = datetime.fromisoformat(
+                node.published_at.replace("Z", "+00:00")
+            )
+        except (ValueError, TypeError):
+            return 0.0
+
+        age_days = (datetime.now(timezone.utc) - published).days
+        if age_days < 30:
+            return 1.0
+        if age_days < 90:
+            return 0.6
+        if age_days < 180:
+            return 0.3
+        return 0.0
 
     def _typosquat_signal(self, name: str) -> float:
-        """Levenshtein <= 2 to a popular name.
+        """Levenshtein distance to a popular package name.
 
-        TODO (Yaxita):
-          - If self.popular is empty, return 0.0.
-          - Compute min Levenshtein distance between name.lower() and any
-            element of self.popular. Hand-write the standard DP (two-row
-            table); do NOT add a dependency just for this.
-          - Distance 0 -> 0.0 (exact = legit, not a typosquat).
-          - Distance 1 -> 1.0
-          - Distance 2 -> 0.5
-          - Else -> 0.0
+        Distance 0 (exact match) is intentionally NOT flagged -- that's a
+        legitimate use of the popular package.
         """
-        raise NotImplementedError
+        if not self.popular:
+            return 0.0
+        name_l = name.lower()
+        if name_l in self.popular:
+            return 0.0
+        best = min(_levenshtein(name_l, p) for p in self.popular)
+        if best == 1:
+            return 1.0
+        if best == 2:
+            return 0.5
+        return 0.0
 
     def _in_degree_signal(self, in_degree: int, max_in_degree: int) -> float:
-        """Normalize in-degree to [0,1]; amplifies the other signals.
-        TODO (Yaxita): in_degree / max(max_in_degree, 1).
-        """
-        raise NotImplementedError
+        """Normalize in-degree to [0,1]; amplifies the other signals."""
+        return in_degree / max(max_in_degree, 1)
 
     # --- public API ---------------------------------------------------------
     def score_graph(
@@ -128,43 +159,92 @@ class Scorer:
         osv_hits: Dict[str, List[Vulnerability]],
         in_degrees: Dict[str, int],
     ) -> List[Score]:
-        """Compute a Score per node, sorted descending by total.
+        """Compute a Score per node, sorted descending by total."""
+        max_in = max(in_degrees.values(), default=1)
+        results: List[Score] = []
 
-        TODO (Yaxita):
-          1. max_in = max(in_degrees.values(), default=1)
-          2. results = []
-          3. For each node in graph.nodes():
-                 vulns = osv_hits.get(node.name, [])
-                 # parent downloads = max over node's parents (popular parent
-                 # is what makes a low-download child suspicious)
-                 parents = graph.parents(node.name)
-                 parent_dl = max(
-                     (graph.get_node(p).weekly_downloads or 0 for p in parents),
-                     default=0,
-                 )
-                 osv = self._osv_signal(vulns)
-                 dl  = self._downloads_signal(node, parent_dl)
-                 own = self._ownership_signal(node)
-                 typ = self._typosquat_signal(node.name)
-                 ind = self._in_degree_signal(
-                           in_degrees.get(node.name, 0), max_in)
-                 total = (self.WEIGHTS["osv"]       * osv
-                        + self.WEIGHTS["downloads"] * dl
-                        + self.WEIGHTS["ownership"] * own
-                        + self.WEIGHTS["typosquat"] * typ
-                        + self.WEIGHTS["in_degree"] * ind)
-                 reasons = []
-                 if osv > 0:  reasons.append(f"OSV: {[v.osv_id for v in vulns]}")
-                 if dl  > 0.5: reasons.append("anomalously low downloads")
-                 if own > 0.5: reasons.append("recent maintainer change")
-                 if typ > 0.5: reasons.append("typosquat candidate")
-                 results.append(Score(
-                     name=node.name, total=total,
-                     osv=osv, downloads=dl, ownership=own,
-                     typosquat=typ, in_degree=ind,
-                     flagged=total >= self.threshold,
-                     reasons=reasons,
-                 ))
-          4. Return sorted(results, key=lambda s: s.total, reverse=True)
-        """
-        raise NotImplementedError
+        for node in graph.nodes():
+            vulns = osv_hits.get(node.name, [])
+
+            parent_dl = max(
+                (graph.get_node(p).weekly_downloads or 0
+                 for p in graph.parents(node.name)),
+                default=0,
+            )
+
+            osv = self._osv_signal(vulns)
+            dl = self._downloads_signal(node, parent_dl)
+            own = self._ownership_signal(node)
+            typ = self._typosquat_signal(node.name)
+            ind = self._in_degree_signal(
+                in_degrees.get(node.name, 0), max_in
+            )
+
+            total = (
+                self.WEIGHTS["osv"]       * osv
+                + self.WEIGHTS["downloads"] * dl
+                + self.WEIGHTS["ownership"] * own
+                + self.WEIGHTS["typosquat"] * typ
+                + self.WEIGHTS["in_degree"] * ind
+            )
+
+            reasons: List[str] = []
+            if vulns:
+                ids = ", ".join(v.osv_id for v in vulns)
+                reasons.append(f"OSV: {ids}")
+            if dl >= 0.5:
+                reasons.append(
+                    f"low downloads ({node.weekly_downloads}/wk under "
+                    f"popular parent)"
+                )
+            if own >= 0.5:
+                reasons.append("very recent publish (possible takeover)")
+            if typ >= 0.5:
+                reasons.append("typosquat candidate")
+            if ind >= 0.5:
+                reasons.append(
+                    f"high in-degree (depended on by many other packages)"
+                )
+
+            results.append(
+                Score(
+                    name=node.name,
+                    total=total,
+                    osv=osv,
+                    downloads=dl,
+                    ownership=own,
+                    typosquat=typ,
+                    in_degree=ind,
+                    flagged=total >= self.threshold,
+                    reasons=reasons,
+                )
+            )
+
+        return sorted(results, key=lambda s: s.total, reverse=True)
+
+
+# -----------------------------------------------------------------------------
+# private helpers
+# -----------------------------------------------------------------------------
+def _levenshtein(a: str, b: str) -> int:
+    """Standard two-row DP. Hand-rolled to avoid pulling in another dep just
+    for one helper."""
+    if a == b:
+        return 0
+    if len(a) < len(b):
+        a, b = b, a
+    if not b:
+        return len(a)
+
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        curr = [i]
+        for j, cb in enumerate(b, start=1):
+            cost = 0 if ca == cb else 1
+            curr.append(min(
+                curr[j - 1] + 1,    # insert
+                prev[j] + 1,        # delete
+                prev[j - 1] + cost, # substitute
+            ))
+        prev = curr
+    return prev[-1]

@@ -110,8 +110,8 @@ signals (see `src/scoring.py`):
 | -------------------- | -----: | ----------------------------------------------------------------- |
 | OSV hit              |  0.50  | Hard ground-truth label from osv.dev                              |
 | Low downloads        |  0.15  | Near-zero weekly downloads sitting under a popular parent         |
-| Recent ownership     |  0.15  | Maintainer transferred within the last 30/90/180 days             |
-| Typosquatting        |  0.10  | Levenshtein ≤ 2 to a top-1k npm package name                      |
+| Recent ownership     |  0.15  | Latest publish was within the last 30/90/180 days                 |
+| Typosquatting        |  0.10  | Levenshtein ≤ 2 to a popular npm package name                     |
 | High in-degree       |  0.10  | Many packages depend on this node (from Kahn's pass)              |
 
 A node is *flagged* when its score crosses `DEFAULT_THRESHOLD = 0.30`
@@ -135,24 +135,24 @@ At depth 4, event-stream@3.3.6 is flagged:
 ```
 .
 ├── README.md               this file
-├── TODO.md                 shared task tracker, split by owner
+├── TODO.md                 task tracker
 ├── requirements.txt        runtime + test dependencies (3 packages)
 ├── .gitignore              ignores caches, reports, venv
 ├── src/
 │   ├── __init__.py
-│   ├── graph.py            DiGraph + BFS / DFS / cycle / toposort     [Helen]
-│   ├── crawler.py          npm registry BFS w/ on-disk cache          [Helen]
-│   ├── osv_client.py       OSV /v1/query + semver range matching      [Yaxita]
-│   ├── scoring.py          5-signal suspicion heuristic               [Yaxita]
-│   ├── analyzer.py         end-to-end pipeline + JSON report          [Yaxita]
-│   └── cli.py              python -m src.cli <package>                [Yaxita]
+│   ├── graph.py            DiGraph + BFS / DFS / cycle / toposort
+│   ├── crawler.py          npm registry BFS w/ on-disk cache
+│   ├── osv_client.py       OSV /v1/query + semver range matching
+│   ├── scoring.py          5-signal suspicion heuristic
+│   ├── analyzer.py         end-to-end pipeline + JSON report
+│   └── cli.py              python -m src.cli <package>
 ├── tests/
 │   ├── __init__.py
-│   ├── test_graph.py                                                   [Helen]
-│   ├── test_crawler.py                                                 [Helen]
-│   ├── test_osv_client.py                                              [Yaxita]
-│   ├── test_scoring.py                                                 [Yaxita]
-│   └── fixtures/           cached registry/OSV JSON for offline tests
+│   ├── test_graph.py
+│   ├── test_crawler.py
+│   ├── test_osv_client.py
+│   ├── test_scoring.py
+│   └── fixtures/           cached registry / downloads / OSV JSON
 ├── data/
 │   └── cache/              local crawl + OSV caches (git-ignored)
 └── reports/                generated JSON analysis reports (git-ignored)
@@ -164,8 +164,8 @@ At depth 4, event-stream@3.3.6 is flagged:
 
 - Python ≥ 3.9 (every module uses `from __future__ import annotations`,
   so generic syntax like `list[str]` works on 3.9+ as well as 3.10+)
-- An internet connection on first run (subsequent runs are served entirely
-  from `data/cache/`)
+- An internet connection on first run; subsequent runs are served entirely
+  from `data/cache/`
 
 ### One-time setup
 
@@ -193,88 +193,69 @@ pip install -r requirements.txt
 pytest -q
 ```
 
-Until each `raise NotImplementedError` is replaced, the tests will fail
-loudly — that is the intended TDD signal. Pick a checkbox in
-[`TODO.md`](./TODO.md), implement it, and re-run.
+Tests run fully offline against committed fixtures in `tests/fixtures/`; no
+network is required to validate the implementation.
 
-### Run the analyzer (once implemented)
+### Run the analyzer
 
 ```bash
 # basic
 python -m src.cli express
 
-# tune depth and write a JSON report
+# tune depth and write a JSON report to disk
 python -m src.cli express --max-depth 4 --output reports/express.json
 
 # include devDependencies (much larger graph, optional)
 python -m src.cli react --include-dev
 ```
 
-The first invocation against a given seed will populate `data/cache/` from
-the live registry and OSV; every subsequent run is served from disk and is
-fully offline / deterministic.
+The first invocation against a given seed populates `data/cache/` from the
+live registry and OSV; every subsequent run is served from disk and is fully
+offline / deterministic.
 
----
+#### Sample output
 
-## Development
+```
+express: 53 nodes, 90 edges, max depth 2, 0 cycles
 
-### Work split
+Top in-degree (highest blast radius):
+  debug                             in-degree=5
+  parseurl                          in-degree=4
+  statuses                          in-degree=4
+  encodeurl                         in-degree=4
+  mime-types                        in-degree=4
 
-The project is intentionally divided into two non-overlapping tracks so the
-two team members can implement in parallel without merge conflicts:
+No suspicious packages detected.
+```
 
-| Track                | Owner       | Files                                                              |
-| -------------------- | ----------- | ------------------------------------------------------------------ |
-| Graph & crawler      | Helen Li    | `src/graph.py`, `src/crawler.py`, `tests/test_graph.py`, `tests/test_crawler.py` |
-| Detection & pipeline | Yaxita Amin | `src/osv_client.py`, `src/scoring.py`, `src/analyzer.py`, `src/cli.py`, `tests/test_osv_client.py`, `tests/test_scoring.py` |
+### Programmatic use
 
-The granular checklist of stubs to fill in lives in
-[`TODO.md`](./TODO.md). When you finish an item, flip its `[ ]` to `[x]`
-and commit so the other person can pull and integrate.
+The same pipeline is callable directly from Python; this is the entry point a
+GUI / web frontend should use instead of shelling out to the CLI:
 
-### Shared contract
+```python
+from src.analyzer import analyze
 
-The `Node` dataclass at the top of `src/graph.py` is the single shared
-interface between the two tracks. The scorer reads:
-
-- `node.weekly_downloads`
-- `node.osv_ids`
-- `node.maintainers`
-- `node.published_at`
-- `node.version`
-
-…all of which the crawler must populate. Lock those field names before
-either track starts implementing.
-
-### Suggested implementation order
-
-**Helen** — graph track:
-1. `DiGraph` storage + accessors (`add_node`, `add_edge`, `children`, `parents`, `__len__`)
-2. `bfs` → unblocks `test_bfs_*`
-3. `find_cycles` and `topological_sort` → unblocks `test_topo_*`
-4. `dfs_paths`
-5. `crawler.fetch_manifest` + `resolve_latest_version` (the rest of `crawl` is glue)
-
-**Yaxita** — detection track (independent of Helen's bodies; only depends on `Node` field names):
-1. `osv_client.version_in_range` — pure function, easiest win
-2. `osv_client.query` — cache-only path is testable immediately
-3. `scoring._typosquat_signal` (Levenshtein), `_osv_signal` (severity map)
-4. `scoring.score_graph`
-5. `analyzer.analyze` + `cli.main` (last; glues everything together)
+report = analyze("express", max_depth=4)
+# report is a JSON-serializable dict with keys:
+#   "seed", "stats", "cycles", "top_in_degree", "flagged"
+```
 
 ---
 
 ## Status / Roadmap
 
 - [x] Datasets verified live (npm registry, npm downloads, OSV `/v1/query`)
-- [x] Project skeleton, dependency manifest, work split
-- [ ] `graph.py` algorithms + tests
-- [ ] `crawler.py` BFS + on-disk cache + tests
-- [ ] `osv_client.py` query + semver range matching + tests
-- [ ] `scoring.py` 5-signal heuristic + tests
-- [ ] `analyzer.py` pipeline + JSON report
-- [ ] `cli.py` entry point
-- [ ] Commit fixture JSONs under `tests/fixtures/`
+- [x] Project skeleton + dependency manifest
+- [x] `graph.py` — BFS, DFS, cycle detection, Kahn's toposort + 9 unit tests
+- [x] `crawler.py` — BFS crawler with on-disk cache + 6 fixture-based tests
+- [x] `osv_client.py` — `/v1/query` + semver range matching + 9 unit tests
+- [x] `scoring.py` — 5-signal heuristic + 13 unit tests
+- [x] `analyzer.py` — end-to-end pipeline + JSON report
+- [x] `cli.py` — `python -m src.cli <package>` entry point
+- [x] Test fixtures committed under `tests/fixtures/`
+- [x] **37 / 37 tests passing**
+- [ ] Graphical UI (in progress)
 - [ ] Evaluation on `express`, `react`, `lodash` seeds with quantitative metrics
 - [ ] Final write-up with case studies (including `event-stream`)
 

@@ -1,8 +1,4 @@
-# Work Split & TODO Tracker
-
-This file is the contract between the two of us. Each task lists its owner
-and is satisfied by the matching `raise NotImplementedError` getting
-replaced with a real implementation **plus** the corresponding test passing.
+# TODO Tracker
 
 When you finish an item, change `[ ]` to `[x]` and commit, so the other
 person can pull and integrate.
@@ -15,12 +11,12 @@ Owns: `src/graph.py`, `src/crawler.py`, `tests/test_graph.py`,
 `tests/test_crawler.py`
 
 ### `src/graph.py`
-- [x] `DiGraph.__init__` — pick the adjacency-list storage (see file comment)
+- [x] `DiGraph.__init__` — adjacency-list storage
 - [x] `DiGraph.add_node` / `add_edge` / accessors (`children`, `parents`, `nodes`, `__len__`)
-- [x] `DiGraph.bfs(source)` — return depth map, also write `depth` onto each Node
+- [x] `DiGraph.bfs(source)` — depth map, writes `Node.depth`
 - [x] `DiGraph.dfs_paths(source, target, max_paths)` — bounded simple-path enumeration
-- [x] `DiGraph.find_cycles()` — DFS with WHITE/GRAY/BLACK coloring (iterative)
-- [x] `DiGraph.topological_sort()` — Kahn's algorithm; return `(order, in_degrees)`
+- [x] `DiGraph.find_cycles()` — iterative DFS with WHITE/GRAY/BLACK coloring
+- [x] `DiGraph.topological_sort()` — Kahn's algorithm; returns `(order, in_degrees)`
 
 ### `src/crawler.py`
 - [x] `NpmCrawler.fetch_manifest` — HTTP + on-disk JSON cache
@@ -34,46 +30,48 @@ Owns: `src/graph.py`, `src/crawler.py`, `tests/test_graph.py`,
 
 ---
 
-## Yaxita Amin — Detection track
+## Yaxita Amin — Detection & UI track
 
 Owns: `src/osv_client.py`, `src/scoring.py`, `src/analyzer.py`, `src/cli.py`,
-`tests/test_osv_client.py`, `tests/test_scoring.py`
+`tests/test_osv_client.py`, `tests/test_scoring.py`, **plus the UI**.
 
 ### `src/osv_client.py`
-- [ ] `OsvClient.query(package)` — POST + cache + parse into `Vulnerability` list
-- [ ] `OsvClient.version_in_range(version, ranges)` — semver event-walking
-- [ ] `OsvClient.annotate_graph(graph)` — attach `osv_ids` onto every Node
+- [x] `OsvClient.query(package)` — POST + cache + parse into `Vulnerability` list
+- [x] `OsvClient.version_in_range(version, ranges)` — semver event-walking
+- [x] `OsvClient.annotate_graph(graph)` — attach `osv_ids` onto every Node
 
 ### `src/scoring.py`
-- [ ] `Scorer._osv_signal`
-- [ ] `Scorer._downloads_signal`
-- [ ] `Scorer._ownership_signal`
-- [ ] `Scorer._typosquat_signal` (hand-rolled Levenshtein, no extra dep)
-- [ ] `Scorer._in_degree_signal`
-- [ ] `Scorer.score_graph` — combine all 5 signals into one `Score` per node
+- [x] `Scorer._osv_signal` — severity → 0..1
+- [x] `Scorer._downloads_signal` — anomaly under popular parent
+- [x] `Scorer._ownership_signal` — recent publish bucketing
+- [x] `Scorer._typosquat_signal` — hand-rolled Levenshtein
+- [x] `Scorer._in_degree_signal` — normalized in-degree
+- [x] `Scorer.score_graph` — combine all 5 signals into one `Score` per node
 
 ### `src/analyzer.py`
-- [ ] `analyze(seed, max_depth, include_dev, output)` — full pipeline + JSON report
+- [x] `analyze(seed, max_depth, include_dev, output)` — full pipeline + JSON report
 
 ### `src/cli.py`
-- [ ] `main()` — argparse + pretty stdout for the `flagged` section
+- [x] `main()` — argparse + pretty stdout for the `flagged` section
 
 ### Tests
-- [ ] `tests/test_osv_client.py` — 3 cases pass
-- [ ] `tests/test_scoring.py` — 3 cases pass
+- [x] `tests/test_osv_client.py` — 9 cases pass
+- [x] `tests/test_scoring.py` — 13 cases pass
+
+### UI (Yaxita)
+- [ ] Build the graphical / web UI on top of `analyzer.analyze()`.
+      The pipeline returns a JSON-serializable dict with keys
+      `seed`, `stats`, `cycles`, `top_in_degree`, `flagged` — wire that
+      into whichever frontend stack you pick.
 
 ---
 
-## Shared sync points (do these together)
+## Shared sync points
 
-- [x] **Lock the `Node` dataclass in `graph.py` before either of us starts.**
-      Yaxita's scorer reads fields (`weekly_downloads`, `osv_ids`,
-      `published_at`, `maintainers`) that Helen's crawler must populate.
-- [x] Commit representative cached JSON files under
-      `tests/fixtures/registry/` (5 packages: pkg-a..pkg-e) and
-      `tests/fixtures/downloads/`.
-      Yaxita still needs to drop OSV fixtures under `tests/fixtures/osv/`.
-- [ ] Run `pytest -q` before every push.
+- [x] Lock the `Node` dataclass in `graph.py` (the contract the scorer reads).
+- [x] Commit cached JSON fixtures under `tests/fixtures/registry/`,
+      `tests/fixtures/downloads/`, `tests/fixtures/osv/`.
+- [ ] Run `pytest -q` before every push (currently 37 / 37 passing).
 - [ ] Final integration run on `express`, `react`, `lodash` seeds; capture
       output under `reports/` for the write-up.
 
@@ -84,6 +82,6 @@ Owns: `src/osv_client.py`, `src/scoring.py`, `src/analyzer.py`, `src/cli.py`,
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-pytest -q                       # current state: every test xfails / NotImplementedError
-python -m src.cli express       # will work once analyzer + cli are filled in
+pytest -q                                  # 37 / 37 pass
+python -m src.cli express --max-depth 4    # end-to-end CLI run
 ```

@@ -1,18 +1,20 @@
 """
 End-to-end pipeline: seed package -> JSON suspicion report.
 
-This module wires together everyone else's work:
-   crawler (Helen)  ->  graph (Helen)  ->  osv (Yaxita)  ->  scoring (Yaxita)
-                                                          ->  report
+Wires the four other modules together:
 
-OWNER: Yaxita Amin (consumes Helen's graph + crawler)
+    crawler   ->   graph   ->   osv_client   ->   scoring   ->   report dict
+
+The returned dict is the public API for any presentation layer (CLI, web UI,
+notebook). It's intentionally JSON-serializable so a UI can ``json.dumps``
+it directly to its frontend.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from .crawler import NpmCrawler
 from .graph import DiGraph
@@ -20,64 +22,103 @@ from .osv_client import OsvClient
 from .scoring import Scorer
 
 
+# A small whitelist of high-traffic npm packages used as the typosquat
+# reference set. Hand-curated for v0; could be replaced by a live download
+# ranking pull in a future iteration.
+POPULAR_NPM_PACKAGES: List[str] = [
+    "express", "react", "react-dom", "lodash", "axios", "moment",
+    "vue", "angular", "jquery", "webpack", "typescript", "eslint",
+    "prettier", "request", "underscore", "async", "chalk", "commander",
+    "debug", "fs-extra", "uuid", "yargs", "bluebird", "minimist",
+    "rimraf", "glob", "mkdirp", "semver", "ws", "redux", "next",
+    "vue-router", "react-redux", "body-parser", "cookie-parser",
+    "morgan", "cors", "helmet", "dotenv", "node-fetch", "got",
+    "ramda", "rxjs", "leftpad", "left-pad", "is-odd", "is-even",
+    "qs", "minimatch", "ms",
+]
+
+
 def analyze(
     seed: str,
     max_depth: int = 5,
     include_dev: bool = False,
     output: Optional[Path] = None,
-) -> dict:
-    """Run the full pipeline, return the report dict, and optionally write it.
+    crawler: Optional[NpmCrawler] = None,
+    osv_client: Optional[OsvClient] = None,
+    scorer: Optional[Scorer] = None,
+) -> Dict[str, Any]:
+    """Run the full pipeline and return a JSON-serializable report.
 
-    Report shape (target):
-        {
-          "seed": "express",
-          "stats": {"nodes": int, "edges": int, "max_depth": int,
-                    "cycle_count": int},
-          "cycles": [["a", "b", "a"], ...],
-          "top_in_degree": [
-              {"name": "ms", "in_degree": 12}, ...   # top 10
-          ],
-          "flagged": [
-              {
-                "name": "event-stream",
-                "version": "3.3.6",
-                "depth": 4,
-                "total": 0.86,
-                "signals": {"osv": 1.0, "downloads": 0.7, ...},
-                "osv_ids": ["GHSA-mh6f-8j2x-4483"],
-                "path": ["express", "body-parser", "qs", "...", "event-stream"],
-                "reasons": ["OSV: [GHSA-...]", "anomalously low downloads"]
-              },
-              ...
-          ]
-        }
-
-    TODO (Yaxita):
-      1. crawler = NpmCrawler(max_depth=max_depth, include_dev=include_dev)
-         graph: DiGraph = crawler.crawl(seed)
-      2. graph.bfs(seed)                       # populates Node.depth
-      3. cycles = graph.find_cycles()
-      4. order, in_degrees = graph.topological_sort()
-      5. osv_hits = OsvClient().annotate_graph(graph)
-      6. scorer = Scorer(popular_names=_load_popular_names())
-         scores = scorer.score_graph(graph, osv_hits, in_degrees)
-      7. Build the report dict above. For each flagged node, call
-         graph.dfs_paths(seed, node.name, max_paths=1) to attach provenance.
-      8. If `output`: output.parent.mkdir(parents=True, exist_ok=True)
-                     output.write_text(json.dumps(report, indent=2))
-      9. Return report.
+    The optional ``crawler``/``osv_client``/``scorer`` parameters exist so
+    tests, notebooks, and a future UI can inject their own caches or
+    custom-tuned scorers without rebuilding the whole pipeline.
     """
-    raise NotImplementedError
+    crawler = crawler or NpmCrawler(
+        max_depth=max_depth, include_dev=include_dev
+    )
+    osv_client = osv_client or OsvClient()
+    scorer = scorer or Scorer(popular_names=POPULAR_NPM_PACKAGES)
 
+    # crawler.crawl is BFS internally and writes Node.depth as it goes,
+    # so every fetched node already carries its correct depth.
+    graph: DiGraph = crawler.crawl(seed)
 
-def _load_popular_names() -> list[str]:
-    """Top-N npm package names by weekly downloads, used for typosquat distance.
+    cycles = graph.find_cycles()
+    _, in_degrees = graph.topological_sort()
+    osv_hits = osv_client.annotate_graph(graph)
+    scores = scorer.score_graph(graph, osv_hits, in_degrees)
 
-    TODO (Yaxita):
-      - For v0 you can hard-code a small whitelist:
-          ["express", "react", "lodash", "axios", "moment", ...]
-      - Stretch goal: pull from
-          https://api.npmjs.org/downloads/range/last-week  (with a fixed list)
-        or commit a static `data/popular.txt` and read from disk.
-    """
-    raise NotImplementedError
+    max_depth_observed = max(
+        (n.depth for n in graph.nodes() if n.depth is not None),
+        default=0,
+    )
+
+    top_in_degree = sorted(
+        in_degrees.items(), key=lambda kv: kv[1], reverse=True
+    )[:10]
+
+    flagged: List[Dict[str, Any]] = []
+    for s in scores:
+        if not s.flagged:
+            continue
+        node = graph.get_node(s.name)
+        paths = graph.dfs_paths(seed, s.name, max_paths=1)
+        flagged.append({
+            "name": s.name,
+            "version": node.version,
+            "depth": node.depth,
+            "total": round(s.total, 4),
+            "signals": {
+                "osv": round(s.osv, 4),
+                "downloads": round(s.downloads, 4),
+                "ownership": round(s.ownership, 4),
+                "typosquat": round(s.typosquat, 4),
+                "in_degree": round(s.in_degree, 4),
+            },
+            "osv_ids": list(node.osv_ids),
+            "weekly_downloads": node.weekly_downloads,
+            "path": paths[0] if paths else [s.name],
+            "reasons": list(s.reasons),
+        })
+
+    report: Dict[str, Any] = {
+        "seed": seed,
+        "stats": {
+            "nodes": len(graph),
+            "edges": graph.edge_count(),
+            "max_depth": max_depth_observed,
+            "cycle_count": len(cycles),
+        },
+        "cycles": cycles,
+        "top_in_degree": [
+            {"name": n, "in_degree": d} for n, d in top_in_degree
+        ],
+        "flagged": flagged,
+    }
+
+    if output is not None:
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(report, indent=2))
+
+    return report
