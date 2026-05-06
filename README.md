@@ -153,6 +153,8 @@ At depth 4, event-stream@3.3.6 is flagged:
 │   ├── test_osv_client.py
 │   ├── test_scoring.py
 │   └── fixtures/           cached registry / downloads / OSV JSON
+├── proposal/               original project proposal PDF
+├── presentation/           final presentation slides + supporting media
 ├── data/
 │   └── cache/              local crawl + OSV caches (git-ignored)
 └── reports/                generated JSON analysis reports (git-ignored)
@@ -258,6 +260,16 @@ report = analyze("express", max_depth=4)
 - [ ] Graphical UI (in progress)
 - [ ] Evaluation on `express`, `react`, `lodash` seeds with quantitative metrics
 - [ ] Final write-up with case studies (including `event-stream`)
+
+## Course Deliverables
+
+| Deliverable          | Location                                               |
+| -------------------- | ------------------------------------------------------ |
+| Source code          | [`src/`](./src/)                                       |
+| Tests                | [`tests/`](./tests/)                                   |
+| Setup instructions   | [Getting Started](#getting-started) above              |
+| Original proposal    | [`proposal/`](./proposal/)                             |
+| Final presentation   | [`presentation/`](./presentation/)                     |
 
 ## References
 
