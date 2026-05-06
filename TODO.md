@@ -15,22 +15,22 @@ Owns: `src/graph.py`, `src/crawler.py`, `tests/test_graph.py`,
 `tests/test_crawler.py`
 
 ### `src/graph.py`
-- [ ] `DiGraph.__init__` — pick the adjacency-list storage (see file comment)
-- [ ] `DiGraph.add_node` / `add_edge` / accessors (`children`, `parents`, `nodes`, `__len__`)
-- [ ] `DiGraph.bfs(source)` — return depth map, also write `depth` onto each Node
-- [ ] `DiGraph.dfs_paths(source, target, max_paths)` — bounded simple-path enumeration
-- [ ] `DiGraph.find_cycles()` — DFS with WHITE/GRAY/BLACK coloring
-- [ ] `DiGraph.topological_sort()` — Kahn's algorithm; return `(order, in_degrees)`
+- [x] `DiGraph.__init__` — pick the adjacency-list storage (see file comment)
+- [x] `DiGraph.add_node` / `add_edge` / accessors (`children`, `parents`, `nodes`, `__len__`)
+- [x] `DiGraph.bfs(source)` — return depth map, also write `depth` onto each Node
+- [x] `DiGraph.dfs_paths(source, target, max_paths)` — bounded simple-path enumeration
+- [x] `DiGraph.find_cycles()` — DFS with WHITE/GRAY/BLACK coloring (iterative)
+- [x] `DiGraph.topological_sort()` — Kahn's algorithm; return `(order, in_degrees)`
 
 ### `src/crawler.py`
-- [ ] `NpmCrawler.fetch_manifest` — HTTP + on-disk JSON cache
-- [ ] `NpmCrawler.fetch_weekly_downloads`
-- [ ] `NpmCrawler.resolve_latest_version`
-- [ ] `NpmCrawler.crawl(seed)` — BFS up to `max_depth`, returns a populated `DiGraph`
+- [x] `NpmCrawler.fetch_manifest` — HTTP + on-disk JSON cache
+- [x] `NpmCrawler.fetch_weekly_downloads`
+- [x] `NpmCrawler.resolve_latest_version`
+- [x] `NpmCrawler.crawl(seed)` — BFS up to `max_depth`, returns a populated `DiGraph`
 
 ### Tests
-- [ ] `tests/test_graph.py` — all 6 cases pass
-- [ ] `tests/test_crawler.py` — 3 cases pass against committed fixtures
+- [x] `tests/test_graph.py` — 9 cases pass
+- [x] `tests/test_crawler.py` — 6 cases pass against committed fixtures
 
 ---
 
@@ -66,12 +66,13 @@ Owns: `src/osv_client.py`, `src/scoring.py`, `src/analyzer.py`, `src/cli.py`,
 
 ## Shared sync points (do these together)
 
-- [ ] **Lock the `Node` dataclass in `graph.py` before either of us starts.**
+- [x] **Lock the `Node` dataclass in `graph.py` before either of us starts.**
       Yaxita's scorer reads fields (`weekly_downloads`, `osv_ids`,
       `published_at`, `maintainers`) that Helen's crawler must populate.
-- [ ] Commit a few representative cached JSON files under
-      `tests/fixtures/registry/` and `tests/fixtures/osv/` so neither test
-      suite needs the network.
+- [x] Commit representative cached JSON files under
+      `tests/fixtures/registry/` (5 packages: pkg-a..pkg-e) and
+      `tests/fixtures/downloads/`.
+      Yaxita still needs to drop OSV fixtures under `tests/fixtures/osv/`.
 - [ ] Run `pytest -q` before every push.
 - [ ] Final integration run on `express`, `react`, `lodash` seeds; capture
       output under `reports/` for the write-up.

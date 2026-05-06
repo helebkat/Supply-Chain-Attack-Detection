@@ -1,118 +1,127 @@
 """
 Directed graph data structure and graph algorithms.
 
-This is the algorithmic core of the project. It implements:
-  - A simple adjacency-list DiGraph that holds package Nodes
+Algorithmic core of the project:
+  - Adjacency-list DiGraph keyed by package name
   - BFS for level-order discovery + depth annotation
   - DFS for path enumeration (root -> any node)
-  - Cycle detection via DFS coloring (WHITE / GRAY / BLACK)
-  - Topological sort via Kahn's algorithm (also gives in-degree ranking)
+  - Cycle detection via iterative DFS coloring (WHITE / GRAY / BLACK)
+  - Topological sort via Kahn's algorithm
 
 OWNER: Helen Li
 
-Rules of engagement
--------------------
-* Do NOT pull in networkx or any external graph library. Hand-implementing
-  the four algorithms below is the whole point of the assignment.
-* The Node dataclass below is the shared contract with scoring.py.
-  If you change a field name, ping Yaxita first.
+The Node dataclass is the shared contract with scoring.py; field names
+must stay stable across modules.
 """
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
 
-# -----------------------------------------------------------------------------
-# Shared contract: this is the data shape Yaxita's scorer will read.
-# Keep field names stable.
-# -----------------------------------------------------------------------------
 @dataclass
 class Node:
     """One package in the dependency graph."""
 
     name: str
     version: Optional[str] = None
-    depth: Optional[int] = None              # set by DiGraph.bfs
-    published_at: Optional[str] = None       # ISO-8601 from manifest['time'][version]
+    depth: Optional[int] = None
+    published_at: Optional[str] = None
     maintainers: List[str] = field(default_factory=list)
     weekly_downloads: Optional[int] = None
-    osv_ids: List[str] = field(default_factory=list)   # filled by OsvClient
+    osv_ids: List[str] = field(default_factory=list)
 
 
-# -----------------------------------------------------------------------------
-# DiGraph
-# -----------------------------------------------------------------------------
 class DiGraph:
     """Adjacency-list directed graph keyed by package name."""
 
     def __init__(self) -> None:
-        # TODO (Helen): pick storage. Suggested:
-        #   self._nodes: Dict[str, Node]      = {}
-        #   self._out:   Dict[str, Set[str]]  = {}   # name -> children
-        #   self._in:    Dict[str, Set[str]]  = {}   # name -> parents
-        # The reverse adjacency (_in) makes Kahn's algorithm O(V+E) without
-        # an extra pass and gives Yaxita's scorer cheap in-degree lookups.
-        raise NotImplementedError
+        self._nodes: Dict[str, Node] = {}
+        self._out: Dict[str, Set[str]] = {}
+        self._in: Dict[str, Set[str]] = {}
 
     # --- mutation ------------------------------------------------------------
     def add_node(self, node: Node) -> None:
-        """Insert a node, or merge metadata if the name is already present.
+        existing = self._nodes.get(node.name)
+        if existing is None:
+            self._nodes[node.name] = node
+            self._out.setdefault(node.name, set())
+            self._in.setdefault(node.name, set())
+            return
 
-        TODO (Helen): if `node.name` already exists, copy over any non-None
-        fields from `node` so a richer second crawl pass can enrich an
-        existing entry without erasing what was already there.
-        """
-        raise NotImplementedError
+        # Merge: copy any populated fields from the new node onto the existing
+        # entry so a richer second crawl pass enriches without overwriting.
+        if node.version is not None:
+            existing.version = node.version
+        if node.depth is not None:
+            existing.depth = node.depth
+        if node.published_at is not None:
+            existing.published_at = node.published_at
+        if node.maintainers:
+            existing.maintainers = node.maintainers
+        if node.weekly_downloads is not None:
+            existing.weekly_downloads = node.weekly_downloads
+        if node.osv_ids:
+            existing.osv_ids = node.osv_ids
 
     def add_edge(self, parent: str, child: str) -> None:
-        """Add a directed edge parent -> child.
-
-        TODO (Helen): create stub Nodes for either endpoint if missing
-        (so an edge can be added before its endpoints have manifests),
-        then update both _out[parent] and _in[child].
-        """
-        raise NotImplementedError
+        if parent not in self._nodes:
+            self.add_node(Node(name=parent))
+        if child not in self._nodes:
+            self.add_node(Node(name=child))
+        self._out[parent].add(child)
+        self._in[child].add(parent)
 
     # --- read-only views -----------------------------------------------------
     def nodes(self) -> Iterable[Node]:
-        raise NotImplementedError
+        return self._nodes.values()
 
     def has_node(self, name: str) -> bool:
-        raise NotImplementedError
+        return name in self._nodes
 
     def get_node(self, name: str) -> Node:
-        raise NotImplementedError
+        return self._nodes[name]
 
     def children(self, name: str) -> Set[str]:
-        raise NotImplementedError
+        return self._out.get(name, set())
 
     def parents(self, name: str) -> Set[str]:
-        raise NotImplementedError
+        return self._in.get(name, set())
 
     def edge_count(self) -> int:
-        raise NotImplementedError
+        return sum(len(c) for c in self._out.values())
 
     def __len__(self) -> int:
-        raise NotImplementedError
+        return len(self._nodes)
 
-    # --- algorithms (the graded part) ---------------------------------------
+    # --- algorithms ----------------------------------------------------------
     def bfs(self, source: str) -> Dict[str, int]:
         """Breadth-first search from `source`.
 
-        Returns a dict mapping every reachable node name to its depth from
-        `source` (`source` itself maps to 0).
-
-        TODO (Helen):
-          1. collections.deque + a visited set.
-          2. As you dequeue each (name, depth), also write the depth back onto
-             the corresponding Node:  self._nodes[name].depth = depth
-             (this is what the proposal calls "how many layers deep is this
-             suspicious package hiding?").
-          3. Return the depth map.
+        Returns a depth map; also writes the depth onto each Node so callers
+        (the scorer, the report formatter) can read it directly.
         """
-        raise NotImplementedError
+        if source not in self._nodes:
+            return {}
+
+        depths: Dict[str, int] = {source: 0}
+        self._nodes[source].depth = 0
+        queue: deque[str] = deque([source])
+
+        while queue:
+            current = queue.popleft()
+            d = depths[current]
+            for child in self._out.get(current, set()):
+                if child in depths:
+                    continue
+                depths[child] = d + 1
+                if child in self._nodes:
+                    self._nodes[child].depth = d + 1
+                queue.append(child)
+
+        return depths
 
     def dfs_paths(
         self,
@@ -120,31 +129,91 @@ class DiGraph:
         target: str,
         max_paths: int = 50,
     ) -> List[List[str]]:
-        """Enumerate up to `max_paths` simple paths from source -> target.
+        """Enumerate up to `max_paths` simple paths source -> target.
 
-        TODO (Helen):
-          - Recursive or stack-based DFS, your choice.
-          - Maintain a `visited_in_path` set to avoid cycles WITHIN one path
-            (we still want to find all alternative routes).
-          - Stop collecting once `max_paths` paths have been recorded; the
-            suspicion report only needs one or two routes per flagged node.
-          - Each path is returned as a list of names, including endpoints.
+        Returns a list of name-paths (each including both endpoints). A
+        per-path visited set ensures simple paths even when the graph
+        contains cycles.
         """
-        raise NotImplementedError
+        if source not in self._nodes or target not in self._nodes:
+            return []
+        if source == target:
+            return [[source]]
+
+        results: List[List[str]] = []
+        path: List[str] = [source]
+        visited_in_path: Set[str] = {source}
+
+        def _dfs(current: str) -> None:
+            if len(results) >= max_paths:
+                return
+            for child in sorted(self._out.get(current, set())):
+                if child in visited_in_path:
+                    continue
+                if child == target:
+                    results.append(path + [child])
+                    if len(results) >= max_paths:
+                        return
+                    continue
+                visited_in_path.add(child)
+                path.append(child)
+                _dfs(child)
+                path.pop()
+                visited_in_path.discard(child)
+                if len(results) >= max_paths:
+                    return
+
+        _dfs(source)
+        return results
 
     def find_cycles(self) -> List[List[str]]:
         """Return one representative cycle per back-edge found.
 
-        TODO (Helen):
-          - DFS with three colors:
-              WHITE = unseen, GRAY = on current recursion stack, BLACK = done.
-          - When you traverse to a GRAY neighbor you've found a back-edge,
-            i.e. a cycle. Reconstruct it by walking the recursion stack from
-            the re-entry point down to the current node.
-          - npm forbids publish-time cycles, so any cycle found here will be
-            reported as anomalous by analyzer.py.
+        Iterative DFS with WHITE/GRAY/BLACK coloring. When the search
+        encounters a GRAY neighbor, the recursion stack between the
+        re-entry point and the current node forms the cycle.
+
+        Iterative (not recursive) so a 2,000-node real-world graph cannot
+        blow the Python recursion limit.
         """
-        raise NotImplementedError
+        WHITE, GRAY, BLACK = 0, 1, 2
+        color: Dict[str, int] = {n: WHITE for n in self._nodes}
+        cycles: List[List[str]] = []
+
+        for start in sorted(self._nodes.keys()):
+            if color[start] != WHITE:
+                continue
+
+            path: List[str] = [start]
+            path_index: Dict[str, int] = {start: 0}
+            color[start] = GRAY
+            stack: List[Tuple[str, Iterator[str]]] = [
+                (start, iter(sorted(self._out.get(start, set()))))
+            ]
+
+            while stack:
+                node, it = stack[-1]
+                child = next(it, None)
+                if child is None:
+                    stack.pop()
+                    path.pop()
+                    path_index.pop(node, None)
+                    color[node] = BLACK
+                    continue
+
+                c = color.get(child, WHITE)
+                if c == WHITE:
+                    color[child] = GRAY
+                    path_index[child] = len(path)
+                    path.append(child)
+                    stack.append(
+                        (child, iter(sorted(self._out.get(child, set()))))
+                    )
+                elif c == GRAY:
+                    start_idx = path_index[child]
+                    cycles.append(path[start_idx:] + [child])
+
+        return cycles
 
     def topological_sort(self) -> Tuple[List[str], Dict[str, int]]:
         """Kahn's algorithm.
@@ -152,18 +221,27 @@ class DiGraph:
         Returns
         -------
         order : list[str]
-            A topological ordering. If the graph contains cycles, only the
-            acyclic prefix is returned; the caller should compare
-            `len(order)` to `len(self)` to detect leftover cyclic nodes.
+            A valid topological ordering. If the graph has cycles, only the
+            acyclic prefix is returned and `len(order) < len(self)` signals
+            the leftover cyclic nodes.
         in_degrees : dict[str, int]
-            The ORIGINAL (pre-peel) in-degree of every node. Yaxita's scorer
-            uses this directly as the "blast radius" signal.
-
-        TODO (Helen):
-          1. Compute initial in-degrees from self._in.
-          2. Push every zero-in-degree node onto a queue.
-          3. Pop, append to `order`, decrement in-degree of each child;
-             when a child hits zero, enqueue it.
-          4. Return (order, original_in_degrees_snapshot).
+            Original (pre-peel) in-degree of every node, suitable for the
+            scorer's blast-radius signal.
         """
-        raise NotImplementedError
+        in_degrees = {n: len(self._in.get(n, set())) for n in self._nodes}
+        remaining = dict(in_degrees)
+
+        queue: deque[str] = deque(
+            sorted(n for n, d in remaining.items() if d == 0)
+        )
+        order: List[str] = []
+
+        while queue:
+            n = queue.popleft()
+            order.append(n)
+            for child in sorted(self._out.get(n, set())):
+                remaining[child] -= 1
+                if remaining[child] == 0:
+                    queue.append(child)
+
+        return order, in_degrees

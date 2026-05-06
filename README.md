@@ -162,8 +162,8 @@ At depth 4, event-stream@3.3.6 is flagged:
 
 ### Prerequisites
 
-- Python ≥ 3.10 (we use the `dataclasses`, `from __future__ import
-  annotations`, and `list[str]` style annotations throughout)
+- Python ≥ 3.9 (every module uses `from __future__ import annotations`,
+  so generic syntax like `list[str]` works on 3.9+ as well as 3.10+)
 - An internet connection on first run (subsequent runs are served entirely
   from `data/cache/`)
 
