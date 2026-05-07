@@ -249,17 +249,6 @@ Top in-degree (highest blast radius):
 No suspicious packages detected.
 ```
 
-### Run the UI
-
-A Streamlit dashboard wraps the same pipeline:
-
-```bash
-streamlit run app.py
-```
-
-Then open the printed `http://localhost:8501` URL, type a package name,
-and hit enter.
-
 ### Programmatic use
 
 The same pipeline is callable directly from Python — this is exactly how
