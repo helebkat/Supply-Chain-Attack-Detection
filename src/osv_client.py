@@ -116,7 +116,17 @@ class OsvClient:
         Walks each range's events left-to-right, flipping an ``inside``
         boolean on ``introduced`` / ``fixed`` / ``last_affected``.
         ``introduced: "0"`` is the OSV idiom for "all versions affected".
+
+        Special case: if any range starts with introduced=0 and has no fixed
+        event, the package is universally affected regardless of version.
         """
+        # Check for a universal "all versions affected" range first — this
+        # applies even when we couldn't resolve the exact version.
+        for r in (ranges or []):
+            events = r.get("events") or []
+            if _is_universal_range(events):
+                return True
+
         if version is None:
             return False
 
@@ -200,6 +210,25 @@ def _parse_vulns(data: Any, package: str) -> List[Vulnerability]:
             )
         )
     return out
+
+
+def _is_universal_range(events: List[dict]) -> bool:
+    """Return True if the events list means 'all versions affected'.
+
+    This is the case when the first event is introduced=0 and there is
+    no subsequent fixed or last_affected event — i.e. the vulnerability
+    has no known fix and applies to every published version.
+    """
+    if not events:
+        return False
+    first = events[0] if isinstance(events[0], dict) else {}
+    if first.get("introduced") != "0":
+        return False
+    # If any later event closes the range, it's not universal.
+    for ev in events[1:]:
+        if isinstance(ev, dict) and ("fixed" in ev or "last_affected" in ev):
+            return False
+    return True
 
 
 def _version_matches_events(v: Version, events: List[dict]) -> bool:
