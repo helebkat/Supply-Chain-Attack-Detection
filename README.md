@@ -1,6 +1,6 @@
 # Supply Chain Attack Detection via npm Dependency Graph Analysis
 
-**MSML606 Bonus Project 2** — University of Maryland
+**MSML606 Bonus Project 2** 
 
 A graph-algorithms application that crawls the npm dependency graph from a
 user-supplied seed package, traverses every transitive dependency, cross-checks
@@ -136,8 +136,9 @@ At depth 4, event-stream@3.3.6 is flagged:
 .
 ├── README.md               this file
 ├── TODO.md                 task tracker
-├── requirements.txt        runtime + test dependencies (3 packages)
+├── requirements.txt        runtime + test dependencies
 ├── .gitignore              ignores caches, reports, venv
+├── app.py                  Streamlit UI (streamlit run app.py)
 ├── src/
 │   ├── __init__.py
 │   ├── graph.py            DiGraph + BFS / DFS / cycle / toposort
@@ -181,13 +182,14 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-`requirements.txt` pulls only three packages:
+`requirements.txt` pulls four packages:
 
 | Package      | Why                                                          |
 | ------------ | ------------------------------------------------------------ |
 | `requests`   | HTTP calls to the npm registry and osv.dev                   |
 | `packaging`  | Robust semver parsing for OSV `affected[].ranges` matching   |
 | `pytest`     | Test runner                                                  |
+| `streamlit`  | Powers the interactive dashboard in `app.py`                 |
 
 ### Run the tests
 
@@ -230,10 +232,21 @@ Top in-degree (highest blast radius):
 No suspicious packages detected.
 ```
 
+### Run the UI
+
+A Streamlit dashboard wraps the same pipeline:
+
+```bash
+streamlit run app.py
+```
+
+Then open the printed `http://localhost:8501` URL, type a package name,
+and hit enter.
+
 ### Programmatic use
 
-The same pipeline is callable directly from Python; this is the entry point a
-GUI / web frontend should use instead of shelling out to the CLI:
+The same pipeline is callable directly from Python — this is exactly how
+`app.py` plugs in:
 
 ```python
 from src.analyzer import analyze
@@ -245,27 +258,12 @@ report = analyze("express", max_depth=4)
 
 ---
 
-## Status / Roadmap
-
-- [x] Datasets verified live (npm registry, npm downloads, OSV `/v1/query`)
-- [x] Project skeleton + dependency manifest
-- [x] `graph.py` — BFS, DFS, cycle detection, Kahn's toposort + 9 unit tests
-- [x] `crawler.py` — BFS crawler with on-disk cache + 6 fixture-based tests
-- [x] `osv_client.py` — `/v1/query` + semver range matching + 9 unit tests
-- [x] `scoring.py` — 5-signal heuristic + 13 unit tests
-- [x] `analyzer.py` — end-to-end pipeline + JSON report
-- [x] `cli.py` — `python -m src.cli <package>` entry point
-- [x] Test fixtures committed under `tests/fixtures/`
-- [x] **37 / 37 tests passing**
-- [ ] Graphical UI (in progress)
-- [ ] Evaluation on `express`, `react`, `lodash` seeds with quantitative metrics
-- [ ] Final write-up with case studies (including `event-stream`)
-
 ## Course Deliverables
 
 | Deliverable          | Location                                               |
 | -------------------- | ------------------------------------------------------ |
 | Source code          | [`src/`](./src/)                                       |
+| Streamlit UI         | [`app.py`](./app.py)                                   |
 | Tests                | [`tests/`](./tests/)                                   |
 | Setup instructions   | [Getting Started](#getting-started) above              |
 | Original proposal    | [`proposal/`](./proposal/)                             |
