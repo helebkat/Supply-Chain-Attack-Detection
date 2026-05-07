@@ -24,8 +24,13 @@
 ## Remaining
 
 - [ ] Drop the final presentation slides into `presentation/`
-- [ ] Capture an integration run on at least one real seed (`express`,
-      `react`, or `lodash`) into `reports/` for the write-up
+- [ ] Capture a JSON report from a real seed (`express`, `react`, or
+      `lodash`) — e.g.
+      `python -m src.cli express --max-depth 4 --output reports/express.json`
+      — and commit it under `reports/` so the artifact ships with the repo
+
+> The Streamlit UI in `app.py` is the primary live demonstration; the
+> committed JSON capture above is just a static snapshot to back it up.
 
 ## Workflow reminder
 
