@@ -1,6 +1,6 @@
 # Supply Chain Attack Detection via npm Dependency Graph Analysis
 
-**MSML606 Bonus Project 2** 
+**MSML606 Bonus Project 2**
 
 A graph-algorithms application that crawls the npm dependency graph from a
 user-supplied seed package, traverses every transitive dependency, cross-checks
@@ -135,10 +135,10 @@ At depth 4, event-stream@3.3.6 is flagged:
 ```
 .
 ├── README.md               this file
-├── TODO.md                 task tracker
+├── TODO.md                 status for group mates
 ├── requirements.txt        runtime + test dependencies
 ├── .gitignore              ignores caches, reports, venv
-├── app.py                  Streamlit UI (streamlit run app.py)
+├── app.py                  Streamlit UI (the primary demo)
 ├── src/
 │   ├── __init__.py
 │   ├── graph.py            DiGraph + BFS / DFS / cycle / toposort
@@ -158,7 +158,8 @@ At depth 4, event-stream@3.3.6 is flagged:
 ├── presentation/           final presentation slides + supporting media
 ├── data/
 │   └── cache/              local crawl + OSV caches (git-ignored)
-└── reports/                generated JSON analysis reports (git-ignored)
+└── reports/                JSON analysis reports (git-ignored except for
+                            one demo snapshot for reference)
 ```
 
 ## Getting Started
@@ -197,13 +198,24 @@ pip install -r requirements.txt
 pytest -q
 ```
 
-Tests run fully offline against committed fixtures in `tests/fixtures/`; no
-network is required to validate the implementation.
+All 38 tests run fully offline against committed fixtures in
+`tests/fixtures/`; no network is required to validate the implementation.
 
-### Run the analyzer
+### Run the UI (primary demo)
+
+A Streamlit dashboard wraps the full pipeline:
 
 ```bash
-# basic
+streamlit run app.py
+```
+
+Then open the printed `http://localhost:8501` URL, type a package name,
+and hit enter.
+
+### Run the analyzer from the command line
+
+```bash
+# basic run
 python -m src.cli express
 
 # tune depth and write a JSON report to disk
@@ -214,10 +226,15 @@ python -m src.cli react --include-dev
 ```
 
 The first invocation against a given seed populates `data/cache/` from the
-live registry and OSV; every subsequent run is served from disk and is fully
-offline / deterministic.
+live registry and OSV; every subsequent run is served from disk and is
+fully offline / deterministic.
 
-#### Sample output
+The `reports/` directory is git-ignored by default (reports are regenerable
+from the cache), with one exception: a single demo snapshot is
+force-committed via `git add -f reports/<seed>.json` so reviewers can see
+exact output without having to run the analyzer themselves.
+
+Sample CLI output:
 
 ```
 express: 53 nodes, 90 edges, max depth 2, 0 cycles
@@ -246,7 +263,7 @@ and hit enter.
 ### Programmatic use
 
 The same pipeline is callable directly from Python — this is exactly how
-`app.py` plugs in:
+`app.py` plugs into the Streamlit frontend:
 
 ```python
 from src.analyzer import analyze

@@ -1,4 +1,4 @@
 requests>=2.31
-packaging>=23.0
+packaging>=23.0,<25      # upper bound matches streamlit 1.30+'s constraint
 pytest>=8.0
 streamlit>=1.30

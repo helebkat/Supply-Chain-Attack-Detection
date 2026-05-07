@@ -64,10 +64,22 @@ def test_version_in_range_falls_back_to_versions_list():
     ) is False
 
 
-def test_version_in_range_missing_version_returns_false():
-    """If the resolved version is None (e.g. yanked package), never match."""
-    ranges = [{"type": "SEMVER", "events": [{"introduced": "0"}]}]
-    assert OsvClient.version_in_range(None, ranges) is False
+def test_version_in_range_none_version_with_bounded_range_returns_false():
+    """If the resolved version is None and the OSV range is bounded
+    (introduced/fixed pair), there's nothing to compare so we cannot match."""
+    bounded = [{"type": "SEMVER",
+                "events": [{"introduced": "3.3.6"}, {"fixed": "4.0.0"}]}]
+    assert OsvClient.version_in_range(None, bounded) is False
+
+
+def test_version_in_range_none_version_with_universal_range_returns_true():
+    """A range of {introduced: 0} with no fixed event means 'all versions
+    affected' (the flatmap-stream case). It must match even when we couldn't
+    resolve the package's version, otherwise yanked/deprecated packages
+    would silently slip past the scanner."""
+    universal = [{"type": "SEMVER", "events": [{"introduced": "0"}]}]
+    assert OsvClient.version_in_range(None, universal) is True
+    assert OsvClient.version_in_range("1.2.3", universal) is True
 
 
 # -----------------------------------------------------------------------------
