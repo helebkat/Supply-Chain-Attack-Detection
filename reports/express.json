@@ -1,0 +1,53 @@
+{
+  "seed": "express",
+  "stats": {
+    "nodes": 64,
+    "edges": 113,
+    "max_depth": 4,
+    "cycle_count": 0
+  },
+  "cycles": [],
+  "top_in_degree": [
+    {
+      "name": "debug",
+      "in_degree": 5
+    },
+    {
+      "name": "es-errors",
+      "in_degree": 5
+    },
+    {
+      "name": "parseurl",
+      "in_degree": 4
+    },
+    {
+      "name": "statuses",
+      "in_degree": 4
+    },
+    {
+      "name": "encodeurl",
+      "in_degree": 4
+    },
+    {
+      "name": "mime-types",
+      "in_degree": 4
+    },
+    {
+      "name": "escape-html",
+      "in_degree": 4
+    },
+    {
+      "name": "http-errors",
+      "in_degree": 4
+    },
+    {
+      "name": "on-finished",
+      "in_degree": 4
+    },
+    {
+      "name": "object-inspect",
+      "in_degree": 4
+    }
+  ],
+  "flagged": []
+}
