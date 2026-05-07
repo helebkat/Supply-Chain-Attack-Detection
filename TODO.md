@@ -7,6 +7,10 @@
   - `src/crawler.py` — npm registry BFS crawler with on-disk JSON cache
   - `tests/test_graph.py` (9 cases) and `tests/test_crawler.py` (6 cases)
   - Committed registry + downloads fixtures under `tests/fixtures/`
+  - Captured a JSON report from a real seed (`express`, `react`, or
+      `lodash`) — e.g.
+      `python -m src.cli express --max-depth 4 --output reports/express.json`
+      — and commit it under `reports/` so the artifact ships with the repo
 
 - **Yaxita — detection & UI track**
   - `src/osv_client.py` — `/v1/query` client with semver event-walking range matching
@@ -20,14 +24,6 @@
 - **Shared**
   - `Node` dataclass locked as the cross-module contract
   - **37 / 37 tests passing**, fully offline against committed fixtures
-
-## Remaining
-
-- [ ] Drop the final presentation slides into `presentation/`
-- [ ] Capture a JSON report from a real seed (`express`, `react`, or
-      `lodash`) — e.g.
-      `python -m src.cli express --max-depth 4 --output reports/express.json`
-      — and commit it under `reports/` so the artifact ships with the repo
 
 > The Streamlit UI in `app.py` is the primary live demonstration; the
 > committed JSON capture above is just a static snapshot to back it up.
