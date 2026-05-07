@@ -155,7 +155,7 @@ At depth 4, event-stream@3.3.6 is flagged:
 │   ├── test_scoring.py
 │   └── fixtures/           cached registry / downloads / OSV JSON
 ├── proposal/               original project proposal PDF
-├── presentation/           final presentation slides + supporting media
+├── presentation/           final presentation slides
 ├── data/
 │   └── cache/              local crawl + OSV caches (git-ignored)
 └── reports/                JSON analysis reports (git-ignored except for
@@ -211,6 +211,9 @@ streamlit run app.py
 
 Then open the printed `http://localhost:8501` URL, type a package name,
 and hit enter.
+
+A recorded walkthrough of the UI exercising all core features is hosted
+on a shared drive: https://drive.google.com/file/d/1LG2kq8hbMs7bQ3KSHlbz9IHT5TejjUgl/view?usp=sharing 
 
 ### Run the analyzer from the command line
 
@@ -274,6 +277,7 @@ report = analyze("express", max_depth=4)
 | Setup instructions   | [Getting Started](#getting-started) above              |
 | Original proposal    | [`proposal/`](./proposal/)                             |
 | Final presentation   | [`presentation/`](./presentation/)                     |
+| Video demo           | [insert link here]                                     |
 
 ## References
 
